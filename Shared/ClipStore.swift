@@ -6,17 +6,20 @@ import Observation
 @MainActor
 @Observable
 final class ClipStore {
-    static let maxHistory = 10
-
     private(set) var items: [ClipItem] = []
     private(set) var lastError: String?
+    private(set) var limits: Limits
 
     private let storage: ClipFileStorage
     private let postsNotifications: Bool
+    private let fixedLimits: Limits?
 
-    init(storage: ClipFileStorage = ClipFileStorage(), postsNotifications: Bool = true) {
+    /// - Parameter limits: pass explicit limits (tests); otherwise the current tier's.
+    init(storage: ClipFileStorage = ClipFileStorage(), postsNotifications: Bool = true, limits: Limits? = nil) {
         self.storage = storage
         self.postsNotifications = postsNotifications
+        self.fixedLimits = limits
+        self.limits = limits ?? Entitlements.limits
         load()
     }
 
@@ -30,12 +33,18 @@ final class ClipStore {
         }
     }
 
-    /// The most recent unpinned clips, newest first, at most `maxHistory`.
+    /// The most recent unpinned clips, newest first, at most `limits.maxHistory`.
     var history: [ClipItem] {
-        Array(items.filter { !$0.isPinned }.sorted { $0.createdAt > $1.createdAt }.prefix(Self.maxHistory))
+        Array(items.filter { !$0.isPinned }.sorted { $0.createdAt > $1.createdAt }.prefix(limits.maxHistory))
     }
 
     var isEmpty: Bool { items.isEmpty }
+
+    /// Whether one more clip may be pinned under the current tier.
+    var canPinMore: Bool {
+        guard let max = limits.maxPins else { return true }
+        return pinned.count < max
+    }
 
     func item(withID id: ClipItem.ID) -> ClipItem? {
         items.first { $0.id == id }
@@ -52,12 +61,21 @@ final class ClipStore {
         }
     }
 
-    /// Re-read from disk after another process may have changed the file.
-    func reload() { load() }
+    /// Re-read from disk after another process may have changed the file or the tier.
+    func reload() {
+        refreshLimits()
+        load()
+    }
+
+    /// Picks up a tier change (purchase, restore, refund).
+    func refreshLimits() {
+        limits = fixedLimits ?? Entitlements.limits
+    }
 
     // MARK: - Mutations
 
     /// Records a copied string, optionally pinning it. Returns `true` if the list changed.
+    /// If pinning is requested but the pin limit is reached, the clip is saved unpinned.
     @discardableResult
     func record(_ raw: String, pinned: Bool = false) -> Bool {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,7 +96,7 @@ final class ClipStore {
             id = item.id
         }
 
-        if pinned, let existing = item(withID: id), !existing.isPinned {
+        if pinned, let existing = item(withID: id), !existing.isPinned, canPinMore {
             pin(id)
             return true
         }
@@ -89,14 +107,18 @@ final class ClipStore {
     }
 
     /// Pins a clip and places it at the top of the pinned list.
-    func pin(_ id: ClipItem.ID) {
-        guard let index = items.firstIndex(where: { $0.id == id }), !items[index].isPinned else { return }
+    /// Returns `false` when the tier's pin limit is reached; nothing changes then.
+    @discardableResult
+    func pin(_ id: ClipItem.ID) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == id }), !items[index].isPinned else { return false }
+        guard canPinMore else { return false }
         for i in items.indices where items[i].isPinned {
             items[i].sortOrder += 1
         }
         items[index].isPinned = true
         items[index].sortOrder = 0
         save()
+        return true
     }
 
     /// Unpins a clip; it re-enters history as the newest item.
@@ -110,9 +132,15 @@ final class ClipStore {
         save()
     }
 
-    func togglePin(_ id: ClipItem.ID) {
-        guard let item = item(withID: id) else { return }
-        item.isPinned ? unpin(id) : pin(id)
+    /// Returns `false` only when a pin was refused because of the limit.
+    @discardableResult
+    func togglePin(_ id: ClipItem.ID) -> Bool {
+        guard let item = item(withID: id) else { return false }
+        if item.isPinned {
+            unpin(id)
+            return true
+        }
+        return pin(id)
     }
 
     /// Reorders pinned clips using SwiftUI's `onMove` semantics.
@@ -143,7 +171,7 @@ final class ClipStore {
         let overflow = items
             .filter { !$0.isPinned }
             .sorted { $0.createdAt > $1.createdAt }
-            .dropFirst(Self.maxHistory)
+            .dropFirst(limits.maxHistory)
             .map(\.id)
         guard !overflow.isEmpty else { return }
         let doomed = Set(overflow)

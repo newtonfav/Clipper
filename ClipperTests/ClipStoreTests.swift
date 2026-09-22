@@ -15,12 +15,48 @@ final class ClipStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func makeStore() -> ClipStore {
-        ClipStore(storage: ClipFileStorage(directory: directory), postsNotifications: false)
+    private func makeStore(limits: Limits = .pro) -> ClipStore {
+        ClipStore(storage: ClipFileStorage(directory: directory), postsNotifications: false, limits: limits)
     }
 
-    func testRecordKeepsNewestTenUnpinned() {
-        let store = makeStore()
+    func testFreeTierCapsHistoryAtTen() {
+        let store = makeStore(limits: .free)
+        for i in 1...12 { store.record("clip \(i)") }
+        XCTAssertEqual(store.history.count, 10)
+        XCTAssertEqual(store.history.first?.text, "clip 12")
+    }
+
+    func testFreeTierRefusesSixthPin() {
+        let store = makeStore(limits: .free)
+        for i in 1...6 { store.record("clip \(i)") }
+        let ids = store.history.map(\.id)
+        for id in ids.prefix(5) { XCTAssertTrue(store.pin(id)) }
+        XCTAssertFalse(store.canPinMore)
+        XCTAssertFalse(store.pin(ids[5]))
+        XCTAssertEqual(store.pinned.count, 5)
+        XCTAssertEqual(store.history.count, 1)
+        XCTAssertFalse(store.togglePin(ids[5]))
+    }
+
+    func testRecordWithPinFallsBackToHistoryAtLimit() {
+        let store = makeStore(limits: .free)
+        for i in 1...5 {
+            store.record("pin \(i)", pinned: true)
+        }
+        XCTAssertEqual(store.pinned.count, 5)
+        store.record("one more", pinned: true)
+        XCTAssertEqual(store.pinned.count, 5)
+        XCTAssertEqual(store.history.first?.text, "one more")
+    }
+
+    func testProTierKeepsFiftyRecent() {
+        let store = makeStore(limits: .pro)
+        for i in 1...60 { store.record("clip \(i)") }
+        XCTAssertEqual(store.history.count, 50)
+    }
+
+    func testRecordKeepsNewestUnpinnedUpToLimit() {
+        let store = makeStore(limits: Limits(maxPins: nil, maxHistory: 10, insertVariants: true, kindActions: true))
         for i in 1...12 { store.record("clip \(i)") }
         XCTAssertEqual(store.history.count, 10)
         XCTAssertEqual(store.history.first?.text, "clip 12")
@@ -53,7 +89,7 @@ final class ClipStoreTests: XCTestCase {
     }
 
     func testPinnedItemsSurviveCap() {
-        let store = makeStore()
+        let store = makeStore(limits: Limits(maxPins: nil, maxHistory: 10, insertVariants: true, kindActions: true))
         store.record("pinned one")
         store.pin(store.history[0].id)
         for i in 1...15 { store.record("clip \(i)") }

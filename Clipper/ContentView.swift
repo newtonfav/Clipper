@@ -2,7 +2,16 @@ import SwiftUI
 import UIKit
 
 struct ContentView: View {
+    private enum Tab: String, CaseIterable, Identifiable {
+        case recent = "Recent"
+        case pinned = "Pinned"
+        var id: String { rawValue }
+    }
+
     @Environment(ClipStore.self) private var store
+    @Environment(ProStore.self) private var pro
+    @State private var showPaywall = false
+    @State private var tab: Tab = .recent
     @State private var showSettings = false
     @State private var showOnboarding = !AppSettings.hasSeenOnboarding
     @State private var confirmClear = false
@@ -29,6 +38,9 @@ struct ContentView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .sheet(isPresented: $showPaywall) {
+                ProPaywallView()
+            }
             .sheet(isPresented: $showOnboarding) {
                 NavigationStack {
                     OnboardingView(onDone: {
@@ -40,40 +52,86 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - List
+
+    private var visibleItems: [ClipItem] {
+        tab == .recent ? store.history : store.pinned
+    }
 
     private var list: some View {
         List {
-            if !store.pinned.isEmpty {
-                Section("Pinned") {
+            Section {
+                Picker("Section", selection: $tab) {
+                    ForEach(Tab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            }
+
+            if visibleItems.isEmpty {
+                Section {
+                    tabEmptyState
+                        .listRowBackground(Color.clear)
+                }
+            } else if tab == .pinned {
+                Section {
                     ForEach(store.pinned) { item in
                         row(item)
                     }
                     .onMove { store.movePinned(fromOffsets: $0, toOffset: $1) }
+                } footer: {
+                    if let max = store.limits.maxPins {
+                        Text("\(store.pinned.count) of \(max) pins used. Clipper Pro removes the limit.")
+                    } else {
+                        Text("Drag to reorder. Pinned clips are never removed automatically.")
+                    }
                 }
-            }
-            Section {
-                ForEach(store.history) { item in
-                    row(item)
-                }
-            } header: {
-                Text("Recent")
-            } footer: {
-                if store.history.isEmpty {
-                    Text("Recent copies show up here. The newest \(ClipStore.maxHistory) are kept.")
+            } else {
+                Section {
+                    ForEach(store.history) { item in
+                        row(item)
+                    }
+                } footer: {
+                    Text("The newest \(store.limits.maxHistory) copies are kept. Pin one to keep it.")
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .animation(.snappy(duration: 0.25), value: visibleItems.map(\.id))
+        .onChange(of: tab) { _, _ in
+            toastTask?.cancel()
+            toast = nil
+        }
     }
 
     private func row(_ item: ClipItem) -> some View {
-        ClipRowView(item: item, onCopy: { copy(item) })
+        ClipRowView(item: item, actionsEnabled: store.limits.kindActions, onCopy: { copy(item) }, onLocked: { showPaywall = true })
             .contentShape(Rectangle())
             .onTapGesture { copy(item) }
+            .contextMenu {
+                Button {
+                    copy(item)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                Button {
+                    togglePin(item)
+                } label: {
+                    Label(item.isPinned ? "Unpin" : "Pin", systemImage: item.isPinned ? "pin.slash" : "pin")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    delete(item)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button {
-                    store.togglePin(item.id)
+                    togglePin(item)
                 } label: {
                     Label(item.isPinned ? "Unpin" : "Pin", systemImage: item.isPinned ? "pin.slash" : "pin")
                 }
@@ -81,12 +139,14 @@ struct ContentView: View {
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button(role: .destructive) {
-                    store.delete(item.id)
+                    delete(item)
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
             }
     }
+
+    // MARK: - Empty states
 
     private var emptyState: some View {
         ContentUnavailableView {
@@ -99,10 +159,24 @@ struct ContentView: View {
         }
     }
 
+    private var tabEmptyState: some View {
+        ContentUnavailableView {
+            Label(tab == .recent ? "No recent clips" : "No pinned clips",
+                  systemImage: tab == .recent ? "clock" : "pin")
+        } description: {
+            Text(tab == .recent
+                 ? "New copies show up here."
+                 : "Swipe right or long-press a recent clip to pin it.")
+        }
+        .padding(.vertical, 24)
+    }
+
+    // MARK: - Toolbar
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            if !store.pinned.isEmpty {
+            if tab == .pinned, !store.pinned.isEmpty {
                 EditButton()
             }
         }
@@ -110,6 +184,7 @@ struct ContentView: View {
             PasteButton(payloadType: String.self) { strings in
                 MainActor.assumeIsolated {
                     if store.record(strings.joined(separator: "\n")) {
+                        tab = .recent
                         showToast("Saved")
                     }
                 }
@@ -141,6 +216,20 @@ struct ContentView: View {
     }
 
     // MARK: - Actions
+
+    private func togglePin(_ item: ClipItem) {
+        let wasPinned = item.isPinned
+        if store.togglePin(item.id) {
+            showToast(wasPinned ? "Unpinned" : "Pinned")
+        } else {
+            showPaywall = true
+        }
+    }
+
+    private func delete(_ item: ClipItem) {
+        store.delete(item.id)
+        showToast("Deleted")
+    }
 
     private func copy(_ item: ClipItem) {
         let pasteboard = UIPasteboard.general

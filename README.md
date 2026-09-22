@@ -73,3 +73,16 @@ Unit tests: `xcodebuild … test` runs `ClipperTests` (store rules, kind detecti
 3. Paste the URL into `ShortcutLinks.saveClipboardShortcut` and rebuild.
 
 The setup guide then shows "Add the Back Tap shortcut", which opens Shortcuts with a single Add Shortcut button. The Action Button needs no install: it lists Clipper's "Save Clipboard" App Shortcut directly.
+
+## Clipper Pro (in-app purchase)
+
+One non-consumable product, `com.newtonfav.clip.pro`, handled with StoreKit 2 in `Clipper/ProStore.swift`. Tier limits live in `Shared/Entitlements.swift` (`Limits.free` / `Limits.pro`) and the Pro flag is cached in the App Group so the keyboard sees it.
+
+| | Free | Pro |
+|---|---|---|
+| Pins | 5 | Unlimited |
+| Recent | 10 | 50 |
+| Insert variants | No | Yes |
+| Link / mail / call actions | No | Yes |
+
+Local testing: the `Clipper` scheme uses `Clipper/Clipper.storekit`, so purchases work in the simulator without App Store Connect. Before release create the same product id in App Store Connect and turn the StoreKit configuration off in the scheme. Existing pins are never removed when a user is on the free tier; only new pins are blocked.

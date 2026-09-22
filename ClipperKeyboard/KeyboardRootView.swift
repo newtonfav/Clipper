@@ -4,9 +4,17 @@ struct KeyboardRootView: View {
     var store: ClipStore
     var actions: KeyboardActions
 
+    private enum Tab: String, CaseIterable, Identifiable {
+        case recent = "Recent"
+        case pinned = "Pinned"
+        var id: String { rawValue }
+    }
+
+    @State private var tab: Tab = .recent
     @State private var expandedID: ClipItem.ID?
     @State private var isEditing = false
-    @State private var deleteRepeater: Task<Void, Never>?
+    @State private var toast: String?
+    @State private var toastTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,21 +22,54 @@ struct KeyboardRootView: View {
             if !actions.hasFullAccess {
                 fullAccessBanner
             }
-            content
-            bottomBar
+            if let error = store.lastError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+            ZStack(alignment: .bottom) {
+                content
+                if let toast {
+                    Text(toast)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
         }
         .preferredColorScheme(actions.isDarkAppearance ? .dark : nil)
+        .onChange(of: actions.captureCount) { _, _ in
+            tab = .recent
+            showToast("Saved to Clipper")
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack {
-            Label("Clipper", systemImage: "doc.on.clipboard")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            if actions.needsInputModeSwitchKey {
+                NextKeyboardButton(controller: actions.inputViewController)
+                    .frame(width: 36, height: 30)
+                    .background(KeyboardTheme.specialKeyColor, in: RoundedRectangle(cornerRadius: 7))
+            }
+
+            Picker("Section", selection: $tab) {
+                ForEach(Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 220)
+
             Spacer()
-            if !store.isEmpty, actions.hasFullAccess {
+
+            if !visibleItems.isEmpty, actions.hasFullAccess {
                 Button(isEditing ? "Done" : "Edit") {
                     isEditing.toggle()
                     expandedID = nil
@@ -37,8 +78,12 @@ struct KeyboardRootView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.top, 4)
         .padding(.bottom, 4)
+        .onChange(of: tab) { _, _ in
+            expandedID = nil
+            isEditing = false
+        }
     }
 
     private var fullAccessBanner: some View {
@@ -57,119 +102,85 @@ struct KeyboardRootView: View {
 
     // MARK: - Content
 
+    private var visibleItems: [ClipItem] {
+        tab == .recent ? store.history : store.pinned
+    }
+
     @ViewBuilder
     private var content: some View {
-        if store.isEmpty {
-            VStack(spacing: 6) {
-                Image(systemName: "clipboard")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                Text("Nothing saved yet")
-                    .font(.subheadline.weight(.semibold))
-                Text("Copy text in any app, then open this keyboard or the Clipper app.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 24)
+        if visibleItems.isEmpty {
+            emptyState
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6, pinnedViews: []) {
-                    section("Pinned", items: store.pinned)
-                    section("Recent", items: store.history)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func section(_ title: String, items: [ClipItem]) -> some View {
-        if !items.isEmpty {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-            ForEach(items) { item in
-                ClipChipRow(
-                    item: item,
-                    isExpanded: expandedID == item.id,
-                    isEditing: isEditing,
-                    canModify: actions.hasFullAccess,
-                    onInsert: { text in
-                        expandedID = nil
-                        actions.insert(text)
-                    },
-                    onToggleExpand: {
-                        expandedID = expandedID == item.id ? nil : item.id
-                    },
-                    onTogglePin: { store.togglePin(item.id) },
-                    onDelete: { store.delete(item.id) }
-                )
-            }
-        }
-    }
-
-    // MARK: - Bottom bar
-
-    private var bottomBar: some View {
-        HStack(spacing: 8) {
-            if actions.needsInputModeSwitchKey {
-                NextKeyboardButton(controller: actions.inputViewController)
-                    .frame(width: 44, height: 40)
-                    .background(KeyboardTheme.specialKeyColor, in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            key(label: "space", isText: true) { actions.insertSpace() }
-                .frame(maxWidth: .infinity)
-
-            key(label: "return", isText: true) { actions.insertNewline() }
-                .frame(width: 80)
-
-            key(label: "delete.left", isText: false) { actions.deleteBackward() }
-                .frame(width: 52)
-                .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 30) {
-                    // handled in onPressingChanged
-                } onPressingChanged: { pressing in
-                    if pressing {
-                        startDeleteRepeat()
-                    } else {
-                        deleteRepeater?.cancel()
-                        deleteRepeater = nil
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(visibleItems) { item in
+                        ClipChipRow(
+                            item: item,
+                            isExpanded: expandedID == item.id,
+                            isEditing: isEditing,
+                            canModify: actions.hasFullAccess,
+                            variantsEnabled: store.limits.insertVariants,
+                            onInsert: { text in
+                                expandedID = nil
+                                actions.insert(text)
+                            },
+                            onToggleExpand: {
+                                expandedID = expandedID == item.id ? nil : item.id
+                            },
+                            onTogglePin: { togglePin(item) },
+                            onDelete: { delete(item) }
+                        )
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+                .animation(.snappy(duration: 0.25), value: visibleItems.map(\.id))
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
     }
 
-    private func key(label: String, isText: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if isText {
-                    Text(label).font(.subheadline)
-                } else {
-                    Image(systemName: label).font(.body)
-                }
-            }
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 40)
-            .background(KeyboardTheme.specialKeyColor, in: RoundedRectangle(cornerRadius: 8))
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Image(systemName: tab == .recent ? "clipboard" : "pin")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text(tab == .recent ? "Nothing copied yet" : "No pinned clips")
+                .font(.subheadline.weight(.semibold))
+            Text(tab == .recent
+                 ? "Copy text in any app, then open this keyboard or the Clipper app."
+                 : "Tap the pin on a recent clip to keep it here for good.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 24)
     }
 
-    private func startDeleteRepeat() {
-        deleteRepeater?.cancel()
-        deleteRepeater = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(450))
-            while !Task.isCancelled {
-                actions.deleteBackward()
-                try? await Task.sleep(for: .milliseconds(70))
-            }
+    // MARK: - Actions
+
+    private func togglePin(_ item: ClipItem) {
+        let wasPinned = item.isPinned
+        if store.togglePin(item.id) {
+            showToast(wasPinned ? "Unpinned" : "Pinned")
+        } else {
+            showToast("Pin limit reached. Upgrade in the Clipper app.")
+        }
+    }
+
+    private func delete(_ item: ClipItem) {
+        store.delete(item.id)
+        showToast("Deleted")
+    }
+
+    private func showToast(_ message: String) {
+        toastTask?.cancel()
+        withAnimation(.snappy(duration: 0.2)) { toast = message }
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.snappy(duration: 0.2)) { toast = nil }
         }
     }
 }

@@ -25,8 +25,8 @@ struct OnboardingView: View {
             Section {
                 step(
                     number: 2,
-                    title: "Allow pasting",
-                    detail: "In Settings > Clipper, set Paste from Other Apps to Allow. Until then, tap Allow Paste when iOS asks.",
+                    title: "Let Clipper read your clipboard",
+                    detail: "The first time Clipper reads a copy, iOS shows a “Clipper would like to paste” alert. Tap Allow Paste. To stop the alert for good, go to Settings > Clipper and set Paste from Other Apps to Allow.",
                     symbol: "doc.on.clipboard"
                 )
             }
@@ -45,8 +45,20 @@ struct OnboardingView: View {
                         Label("Add Shortcut", systemImage: "plus.square.on.square")
                     }
                 }
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    GlobeKeyHintView()
+                    Text("In any app, hold the globe key on the keyboard and pick Clipper. Tap a clip to insert it.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Using it")
             } footer: {
-                Text("Then hold the globe key in any app and pick Clipper. Everything stays on this device.")
+                Text("Everything stays on this device.")
             }
         }
         .navigationTitle("Set up Clipper")

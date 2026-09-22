@@ -6,6 +6,10 @@ enum TextTransform: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// The variants offered in the keyboard. `trimmed` and `firstLine` stay available
+    /// for previews and Shortcuts but are not shown as chips.
+    static let insertVariants: [TextTransform] = [.uppercase, .lowercase]
+
     var label: String {
         switch self {
         case .trimmed: "Trimmed"

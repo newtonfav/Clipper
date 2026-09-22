@@ -9,6 +9,8 @@ final class KeyboardActions {
     private(set) var hasFullAccess = false
     private(set) var needsInputModeSwitchKey = true
     private(set) var isDarkAppearance = false
+    /// Incremented whenever a new clip is captured while the keyboard is open.
+    private(set) var captureCount = 0
 
     @ObservationIgnored private weak var controller: UIInputViewController?
 
@@ -33,6 +35,8 @@ final class KeyboardActions {
             controller?.advanceToNextInputMode()
         }
     }
+
+    func noteCapture() { captureCount += 1 }
 
     func insertSpace() { controller?.textDocumentProxy.insertText(" ") }
     func insertNewline() { controller?.textDocumentProxy.insertText("\n") }

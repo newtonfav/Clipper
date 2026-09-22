@@ -1,0 +1,38 @@
+{
+  "identifier" : "A4C1F2E0-6B3D-4E1A-9C2B-7D5F0E8A1B23",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : true,
+      "internalID" : "5E9D2C4A-1B7F-4A3E-8C6D-2F0E9B7A5C31",
+      "localizations" : [
+        {
+          "description" : "Unlimited pins, 50 recent copies, insert variants and quick actions.",
+          "displayName" : "Clipper Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.newtonfav.clip.pro",
+      "referenceName" : "Clipper Pro",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

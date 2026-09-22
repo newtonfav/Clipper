@@ -8,6 +8,7 @@ final class KeyboardViewController: UIInputViewController {
     private var actions: KeyboardActions?
     private var hostingController: UIHostingController<KeyboardRootView>?
     private var heightConstraint: NSLayoutConstraint?
+    private var clipboardWatcher: Task<Void, Never>?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,6 +18,8 @@ final class KeyboardViewController: UIInputViewController {
         let host = UIHostingController(rootView: KeyboardRootView(store: store, actions: actions))
         host.view.backgroundColor = .clear
         host.view.translatesAutoresizingMaskIntoConstraints = false
+        // The keyboard container reports a safe area; ignore it so content starts at the top edge.
+        host.safeAreaRegions = []
 
         addChild(host)
         view.addSubview(host.view)
@@ -44,8 +47,35 @@ final class KeyboardViewController: UIInputViewController {
         updateHeight()
         actions?.refresh()
         store?.reload()
-        if hasFullAccess, AppSettings.captureOnKeyboardOpen, let store {
-            ClipboardCapture.captureIfNeeded(into: store)
+        captureIfNeeded()
+        startWatchingClipboard()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        clipboardWatcher?.cancel()
+        clipboardWatcher = nil
+    }
+
+    /// Reads the clipboard if its change count moved. Cheap when nothing changed.
+    private func captureIfNeeded() {
+        guard hasFullAccess, AppSettings.captureOnKeyboardOpen, let store else { return }
+        if ClipboardCapture.captureIfNeeded(into: store) == .recorded {
+            actions?.noteCapture()
+        }
+    }
+
+    /// While the keyboard is on screen the user can copy from the field above it,
+    /// so poll the change counter about once a second. Only the counter is read
+    /// unless it moved, so this never shows the paste prompt on its own.
+    private func startWatchingClipboard() {
+        clipboardWatcher?.cancel()
+        clipboardWatcher = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                self?.captureIfNeeded()
+            }
         }
     }
 

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct ClipRowView: View {
     let item: ClipItem
+    var actionsEnabled: Bool = true
     var onCopy: () -> Void
+    var onLocked: () -> Void = {}
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -33,10 +35,15 @@ struct ClipRowView: View {
 
             if let action = kindAction {
                 Button {
-                    action.perform()
+                    if actionsEnabled || item.kind == .code {
+                        action.perform()
+                    } else {
+                        onLocked()
+                    }
                 } label: {
                     Image(systemName: action.symbol)
                         .font(.body)
+                        .foregroundStyle(actionsEnabled || item.kind == .code ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(action.label)
