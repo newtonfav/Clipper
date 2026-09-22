@@ -63,3 +63,13 @@ The first programmatic clipboard read shows the iOS "would like to paste" prompt
 6. Shortcuts: build Get Clipboard → Save to Clipper and run it; the item appears without the app opening.
 
 Unit tests: `xcodebuild … test` runs `ClipperTests` (store rules, kind detection, text transforms).
+
+## One-tap shortcut install
+
+`Clipper/ShortcutLinks.swift` holds an iCloud link to a pre-built "Get Clipboard → Save to Clipper" shortcut. Apps cannot generate importable shortcuts (iOS requires Apple-signed files), so create the link once:
+
+1. On an iPhone with Clipper installed, open Shortcuts, tap +, add **Get Clipboard**, then add **Save to Clipper** and set its Text to the Clipboard variable.
+2. Name it "Save to Clipper", tap Share, choose **Copy iCloud Link**.
+3. Paste the URL into `ShortcutLinks.saveClipboardShortcut` and rebuild.
+
+The setup guide then shows "Add the Back Tap shortcut", which opens Shortcuts with a single Add Shortcut button. The Action Button needs no install: it lists Clipper's "Save Clipboard" App Shortcut directly.

@@ -44,7 +44,7 @@ struct KeyboardRootView: View {
     private var fullAccessBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "lock")
-            Text("Turn on Allow Full Access to capture copies and pin from here. Settings › General › Keyboard › Keyboards › Clipper.")
+            pathText("Turn on Allow Full Access to capture copies and pin from here. Settings > General > Keyboard > Keyboards > Clipper.")
         }
         .font(.caption2)
         .foregroundStyle(.secondary)

@@ -3,13 +3,22 @@ import AppIntents
 struct ClipperShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: SaveClipboardIntent(),
+            phrases: [
+                "Save my clipboard to \(.applicationName)",
+                "Save clipboard with \(.applicationName)",
+            ],
+            shortTitle: "Save Clipboard",
+            systemImageName: "doc.on.clipboard"
+        )
+        AppShortcut(
             intent: SaveToClipperIntent(),
             phrases: [
                 "Save to \(.applicationName)",
                 "Save this to \(.applicationName)",
             ],
-            shortTitle: "Save to Clipper",
-            systemImageName: "doc.on.clipboard"
+            shortTitle: "Save Text",
+            systemImageName: "text.badge.plus"
         )
         AppShortcut(
             intent: GetClipperItemsIntent(),
