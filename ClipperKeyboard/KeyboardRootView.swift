@@ -80,10 +80,18 @@ struct KeyboardRootView: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 4)
+        .frame(minHeight: Self.headerMinHeight)
         .onChange(of: tab) { _, _ in
             expandedID = nil
             isEditing = false
         }
+    }
+
+    /// On iOS 26 the system shades the top of the Liquid Glass keyboard panel where its
+    /// own assistant bar sits (about 44pt, fading out). That shading is drawn over our
+    /// content, so the header claims that zone and the first row starts below it.
+    private static var headerMinHeight: CGFloat {
+        if #available(iOS 26, *) { 52 } else { 0 }
     }
 
     private var fullAccessBanner: some View {
